@@ -28,12 +28,6 @@ public:
 
 	AActor* Target;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Mesh")
-	FVector DefaultLocation;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Mesh")
-	FRotator DefaultRotation;
-
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	float fireRate;
 
@@ -78,6 +72,10 @@ protected:
 	float lastFired;
 
 	float defaultHeight;
+
+	FVector DefaultLocation;
+
+	FRotator DefaultRotation;
 
 public:	
 	// Called every frame

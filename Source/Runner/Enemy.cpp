@@ -19,7 +19,7 @@ AEnemy::AEnemy()
 	RootComponent = CapsuleComponent;
 	MeshComponent = CreateDefaultSubobject<USkeletalMeshComponent>(FName("Mesh"));
 	MeshComponent->SetupAttachment(RootComponent);
-	MeshComponent->SetRelativeLocationAndRotation(DefaultLocation, DefaultRotation.Quaternion(), false, nullptr, ETeleportType::TeleportPhysics);
+	//MeshComponent->SetRelativeLocationAndRotation(DefaultLocation, DefaultRotation.Quaternion(), false, nullptr, ETeleportType::TeleportPhysics);
 	BoxComponent = CreateDefaultSubobject<UBoxComponent>(FName("EnemyDetector"));
 	BoxComponent->SetupAttachment(RootComponent);
 	GunMeshComponent = CreateDefaultSubobject<USkeletalMeshComponent>(FName("Gun"));
@@ -29,27 +29,35 @@ AEnemy::AEnemy()
 void AEnemy::Start()
 {
 	Target = nullptr;
+	MeshComponent->AttachToComponent(CapsuleComponent, FAttachmentTransformRules(EAttachmentRule::KeepRelative, EAttachmentRule::KeepRelative, EAttachmentRule::KeepRelative, true));
 	MeshComponent->SetSimulatePhysics(false);
-	MeshComponent->SetRelativeLocationAndRotation(DefaultLocation, DefaultRotation.Quaternion(), false, nullptr, ETeleportType::TeleportPhysics);
+	MeshComponent->SetRelativeLocationAndRotation(DefaultLocation, DefaultRotation, false, nullptr, ETeleportType::ResetPhysics);
+	CapsuleComponent->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Block);
+	CapsuleComponent->SetCollisionResponseToChannel(ECollisionChannel::ECC_Visibility, ECollisionResponse::ECR_Ignore);
+	CapsuleComponent->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
 	Crouch();
+	
 }
 
 void AEnemy::Crouch()
 {
 	isCrouching = true;
 	CapsuleComponent->SetCapsuleHalfHeight(defaultHeight / 2.0f);
-	//CapsuleComponent->SetRelativeLocationAndRotation(FVector(DefaultLocation.X, DefaultLocation.Y, DefaultLocation.Z - defaultHeight), DefaultRotation.Quaternion(), false, nullptr, ETeleportType::TeleportPhysics);
-	CapsuleComponent->MoveComponent(FVector(0.0f, 0.0f, -defaultHeight), CapsuleComponent->GetComponentRotation(), false, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
-	MeshComponent->MoveComponent(FVector(0.0f, 0.0f, CapsuleComponent->GetScaledCapsuleHalfHeight()), MeshComponent->GetComponentRotation(), false, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
+	CapsuleComponent->MoveComponent(FVector(0.0f, 0.0f, -defaultHeight / 2.0f), CapsuleComponent->GetComponentRotation(), false, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::ResetPhysics);
+	MeshComponent->SetRelativeLocationAndRotation(FVector(DefaultLocation.X, DefaultLocation.Y, DefaultLocation.Z + (defaultHeight / 2.0f)), DefaultRotation, false, nullptr, ETeleportType::ResetPhysics);
 }
 
 void AEnemy::Uncrouch()
 {
+	if (!isCrouching)
+	{
+		return;
+	}
 	isCrouching = false;
 	CapsuleComponent->SetCapsuleHalfHeight(defaultHeight);
 	//CapsuleComponent->SetRelativeLocationAndRotation(FVector(DefaultLocation.X, DefaultLocation.Y, DefaultLocation.Z), DefaultRotation.Quaternion(), false, nullptr, ETeleportType::TeleportPhysics);
-	CapsuleComponent->MoveComponent(FVector(0.0f, 0.0f, defaultHeight), CapsuleComponent->GetComponentRotation(), false, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
-	MeshComponent->SetRelativeLocationAndRotation(DefaultLocation, DefaultRotation.Quaternion(), false, nullptr, ETeleportType::TeleportPhysics);
+	CapsuleComponent->MoveComponent(FVector(0.0f, 0.0f, defaultHeight / 2.0f), CapsuleComponent->GetComponentRotation(), false, nullptr, EMoveComponentFlags::MOVECOMP_NoFlags, ETeleportType::TeleportPhysics);
+	MeshComponent->SetRelativeLocationAndRotation(DefaultLocation, DefaultRotation, false, nullptr, ETeleportType::ResetPhysics);
 }
 
 // Called when the game starts or when spawned
@@ -57,6 +65,11 @@ void AEnemy::BeginPlay()
 {
 	Super::BeginPlay();
 	defaultHeight = CapsuleComponent->GetScaledCapsuleHalfHeight();
+	DefaultLocation = MeshComponent->GetRelativeLocation();
+	DefaultRotation = MeshComponent->GetRelativeRotation();
+	print(FString::Printf(TEXT("Default location is (%f, %f, %f)"), DefaultLocation.X, DefaultLocation.Y, DefaultLocation.Z));
+	print(FString::Printf(TEXT("Default rotation is (%f, %f, %f)"), DefaultRotation.Roll, DefaultRotation.Pitch, DefaultRotation.Yaw));
+	
 	GunMeshComponent->AttachTo(MeshComponent, WeaponSocketName, EAttachLocation::SnapToTarget, false);
 	CapsuleComponent->OnComponentHit.AddDynamic(this, &AEnemy::OnCapsuleHit);
 	BoxComponent->OnComponentBeginOverlap.AddDynamic(this, &AEnemy::OnEnemyDetected);
@@ -93,10 +106,12 @@ void AEnemy::Fire()
 
 void AEnemy::OnCapsuleHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
 {
-	if (OtherActor->StaticClass()->IsChildOf(Projectile))
+	if (OtherActor->IsA(Projectile))
 	{
 		print(FString::Printf(TEXT("Hit occured!")));
 		MeshComponent->SetSimulatePhysics(true);
+		Target = nullptr;
+		CapsuleComponent->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Ignore);
 	}
 }
 
