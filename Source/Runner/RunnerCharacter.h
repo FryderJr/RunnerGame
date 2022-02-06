@@ -18,6 +18,12 @@ class ARunnerCharacter : public ACharacter
 	/** Follow camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
 	class UCameraComponent* FollowCamera;
+
+	UPROPERTY(VisibleAnywhere, Category = Weapon)
+	class USkeletalMeshComponent* GunMeshComponent;
+
+	FVector TouchDownLoc;
+
 public:
 	ARunnerCharacter();
 
@@ -28,6 +34,24 @@ public:
 	/** Base look up/down rate, in deg/sec. Other scaling may affect final rate. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category=Camera)
 	float BaseLookUpRate;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Weapon)
+	float Pitch;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Weapon)
+	float Yaw;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = Weapon)
+	FName MuzzleSocketName;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = Weapon)
+	FName WeaponSocketName;
+
+	UPROPERTY(EditDefaultsOnly, Category = Weapon)
+	TSubclassOf<AActor> Projectile;
+
+	UPROPERTY(EditDefaultsOnly, Category = Control)
+	class UAnimMontage* SlideMontage;
 
 protected:
 
@@ -52,20 +76,36 @@ protected:
 	 */
 	void LookUpAtRate(float Rate);
 
+	/*
+	*/
+	void JumpOrCrouchAxis(float Value);
+
 	/** Handler for when a touch input begins. */
 	void TouchStarted(ETouchIndex::Type FingerIndex, FVector Location);
 
 	/** Handler for when a touch input stops. */
 	void TouchStopped(ETouchIndex::Type FingerIndex, FVector Location);
 
-	UFUNCTION(BlueprintImplementableEvent, Category=Control)
+	FVector SetAim(FVector worldLocation, FVector worldDirection);
+
+	void StartFire();
+
+	UFUNCTION(BlueprintCallable, Category = Weapon)
+	void Fire(FVector aimLoc);
+
+	UFUNCTION(Category=Control)
 	void SlideStarted();
+
+	UFUNCTION()
+	void SlideEnded(FName NotifyName, const FBranchingPointNotifyPayload& BranchingPointPayload);
 
 protected:
 	// APawn interface
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	// End of APawn interface
 	virtual void Tick(float DeltaTime) override;
+
+	virtual void BeginPlay() override;
 
 public:
 	/** Returns CameraBoom subobject **/

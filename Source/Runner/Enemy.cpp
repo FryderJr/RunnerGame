@@ -20,14 +20,21 @@ AEnemy::AEnemy()
 	MeshComponent = CreateDefaultSubobject<USkeletalMeshComponent>(FName("Mesh"));
 	MeshComponent->SetupAttachment(RootComponent);
 	//MeshComponent->SetRelativeLocationAndRotation(DefaultLocation, DefaultRotation.Quaternion(), false, nullptr, ETeleportType::TeleportPhysics);
-	BoxComponent = CreateDefaultSubobject<UBoxComponent>(FName("EnemyDetector"));
-	BoxComponent->SetupAttachment(RootComponent);
+	
+	//Setup player detection colliders
+	FireRange = CreateDefaultSubobject<UBoxComponent>(FName("FireRange"));
+	FireRange->SetupAttachment(RootComponent);
+	EnemyDetectionRange = CreateDefaultSubobject<UBoxComponent>(FName("EnemyDetector"));
+	EnemyDetectionRange->SetupAttachment(RootComponent);
+
+	//Setup weapon skeletal mesh
 	GunMeshComponent = CreateDefaultSubobject<USkeletalMeshComponent>(FName("Gun"));
 	GunMeshComponent->SetupAttachment(MeshComponent);
 }
 
 void AEnemy::Start()
 {
+	isDead = false;
 	Target = nullptr;
 	MeshComponent->AttachToComponent(CapsuleComponent, FAttachmentTransformRules(EAttachmentRule::KeepRelative, EAttachmentRule::KeepRelative, EAttachmentRule::KeepRelative, true));
 	MeshComponent->SetSimulatePhysics(false);
@@ -36,7 +43,6 @@ void AEnemy::Start()
 	CapsuleComponent->SetCollisionResponseToChannel(ECollisionChannel::ECC_Visibility, ECollisionResponse::ECR_Ignore);
 	CapsuleComponent->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
 	Crouch();
-	
 }
 
 void AEnemy::Crouch()
@@ -71,8 +77,13 @@ void AEnemy::BeginPlay()
 	print(FString::Printf(TEXT("Default rotation is (%f, %f, %f)"), DefaultRotation.Roll, DefaultRotation.Pitch, DefaultRotation.Yaw));
 	
 	GunMeshComponent->AttachTo(MeshComponent, WeaponSocketName, EAttachLocation::SnapToTarget, false);
-	CapsuleComponent->OnComponentHit.AddDynamic(this, &AEnemy::OnCapsuleHit);
-	BoxComponent->OnComponentBeginOverlap.AddDynamic(this, &AEnemy::OnEnemyDetected);
+	//CapsuleComponent->OnComponentHit.AddDynamic(this, &AEnemy::OnCapsuleHit);
+
+	EnemyDetectionRange->OnComponentBeginOverlap.AddDynamic(this, &AEnemy::OnEnemyDetected);
+	FireRange->OnComponentBeginOverlap.AddDynamic(this, &AEnemy::OnEnterFireRange);
+
+	OnActorHit.AddDynamic(this, &AEnemy::OnEnemyHit);
+
 	Start();
 }
 
@@ -104,26 +115,46 @@ void AEnemy::Fire()
 	lastFired = currentTime;
 }
 
-void AEnemy::OnCapsuleHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+void AEnemy::OnEnemyHit(AActor* SelfActor, AActor* OtherActor, FVector NormalImpulse, const FHitResult& Hit)
 {
-	if (OtherActor->IsA(Projectile))
+	print(FString::Printf(TEXT("Hit occured!")));
+	MeshComponent->SetSimulatePhysics(true);
+	Target = nullptr;
+	isDead = true;
+	CapsuleComponent->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Ignore);
+	/*if (OtherActor->IsA(Projectile))
 	{
-		print(FString::Printf(TEXT("Hit occured!")));
-		MeshComponent->SetSimulatePhysics(true);
-		Target = nullptr;
-		CapsuleComponent->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Ignore);
-	}
+		
+	}*/
 }
 
 void AEnemy::OnEnemyDetected(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
+	if (isDead)
+	{
+		return;
+	}
 	ACharacter* characterTemp = Cast<ACharacter>(OtherActor);
 	if (characterTemp == nullptr)
 	{
 		return;
 	}
-	Target = OtherActor;
 	Uncrouch();
+}
+
+void AEnemy::OnEnterFireRange(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+	if (isDead)
+	{
+		return;
+	}
+	ACharacter* characterTemp = Cast<ACharacter>(OtherActor);
+	if (characterTemp == nullptr)
+	{
+		return;
+	}
+	print(FString::Printf(TEXT("Fire range!")));
+	Target = OtherActor;
 }
 
 // Called every frame

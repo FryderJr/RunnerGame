@@ -52,22 +52,30 @@ protected:
 	void Fire();
 
 	UFUNCTION()
-	void OnCapsuleHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
+	void OnEnemyHit(AActor* SelfActor, AActor* OtherActor, FVector NormalImpulse, const FHitResult& Hit);
 
 	UFUNCTION()
 	void OnEnemyDetected(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+
+	UFUNCTION()
+	void OnEnterFireRange(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
 	UPROPERTY(VisibleDefaultsOnly, Category = "Components")
 	UCapsuleComponent* CapsuleComponent;
 
 	UPROPERTY(VisibleDefaultsOnly, Category = "Components")
-	UBoxComponent* BoxComponent;
+	UBoxComponent* FireRange;
+
+	UPROPERTY(VisibleDefaultsOnly, Category = "Components")
+	UBoxComponent* EnemyDetectionRange;
 
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	USkeletalMeshComponent* MeshComponent;
 
 	UPROPERTY(VisibleAnywhere, Category = "Components")
 	USkeletalMeshComponent* GunMeshComponent;
+
+	bool isDead;
 
 	float lastFired;
 

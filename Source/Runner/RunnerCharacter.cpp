@@ -5,10 +5,15 @@
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "Kismet/GameplayStatics.h"
+#include "Animation/AnimInstance.h"
+
+#define print(text) if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 1.5, FColor::Red,text)
 
 //////////////////////////////////////////////////////////////////////////
 // ARunnerCharacter
@@ -44,6 +49,10 @@ ARunnerCharacter::ARunnerCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName); // Attach the camera to the end of the boom and let the boom adjust to match the controller orientation
 	FollowCamera->bUsePawnControlRotation = false; // Camera does not rotate relative to arm
 
+	// Create gun mesh
+	GunMeshComponent = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Gun"));
+	GunMeshComponent->SetupAttachment(GetMesh(), WeaponSocketName);
+
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named MyCharacter (to avoid direct content references in C++)
 }
@@ -57,11 +66,14 @@ void ARunnerCharacter::SetupPlayerInputComponent(class UInputComponent* PlayerIn
 	check(PlayerInputComponent);
 	PlayerInputComponent->BindAction("Jump", IE_Pressed, this, &ACharacter::Jump);
 	PlayerInputComponent->BindAction("Jump", IE_Released, this, &ACharacter::StopJumping);
+	PlayerInputComponent->BindAction("Fire", IE_Pressed, this, &ARunnerCharacter::StartFire);
 
 	PlayerInputComponent->BindAction("Crouch", IE_Pressed, this, &ARunnerCharacter::SlideStarted);
 
 	PlayerInputComponent->BindAxis("MoveForward", this, &ARunnerCharacter::MoveForward);
 	PlayerInputComponent->BindAxis("MoveRight", this, &ARunnerCharacter::MoveRight);
+
+	PlayerInputComponent->BindAxis("JumpOrCrouch", this, &ARunnerCharacter::JumpOrCrouchAxis);
 
 	// We have 2 versions of the rotation bindings to handle different kinds of devices differently
 	// "turn" handles devices that provide an absolute delta, such as a mouse.
@@ -87,6 +99,12 @@ void ARunnerCharacter::Tick(float DeltaTime)
 	MoveForward(1.0);
 }
 
+void ARunnerCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+	GunMeshComponent->AttachTo(GetMesh(), WeaponSocketName, EAttachLocation::SnapToTarget, false);
+}
+
 
 void ARunnerCharacter::OnResetVR()
 {
@@ -99,14 +117,107 @@ void ARunnerCharacter::OnResetVR()
 	UHeadMountedDisplayFunctionLibrary::ResetOrientationAndPosition();
 }
 
+void ARunnerCharacter::JumpOrCrouchAxis(float Value)
+{
+	if (Value > .8f)
+	{
+		if (GetCharacterMovement()->IsFalling())
+		{
+			return;
+		}
+		Jump();
+		return;
+	}
+	if (Value < -.8f)
+	{
+		SlideStarted();
+		return;
+	}
+}
+
 void ARunnerCharacter::TouchStarted(ETouchIndex::Type FingerIndex, FVector Location)
 {
-		Jump();
+	TouchDownLoc = Location;
 }
 
 void ARunnerCharacter::TouchStopped(ETouchIndex::Type FingerIndex, FVector Location)
 {
-		StopJumping();
+	FVector tempWorldLocation;
+	FVector tempWorldDirection;
+	UGameplayStatics::GetPlayerController(this, 0)->DeprojectScreenPositionToWorld(Location.X, Location.Y, tempWorldLocation, tempWorldDirection);
+	Fire(SetAim(tempWorldLocation, tempWorldDirection));
+}
+
+FVector ARunnerCharacter::SetAim(FVector worldLocation, FVector worldDirection)
+{
+	FVector muzzleLoc = GunMeshComponent->GetSocketLocation(MuzzleSocketName);
+	FVector end = worldLocation + worldDirection * 4000;
+	FRotator weaponRotation = UKismetMathLibrary::FindLookAtRotation(muzzleLoc, end);
+	Pitch = weaponRotation.Pitch;
+	Yaw = weaponRotation.Yaw;
+	FHitResult HitResult;
+	FCollisionQueryParams CollisionQueryParams;
+	CollisionQueryParams.AddIgnoredActor(this);
+	if (GetWorld()->LineTraceSingleByChannel(HitResult, worldLocation, end, ECollisionChannel::ECC_Camera, CollisionQueryParams))
+	{
+		return HitResult.Location;
+	}
+
+	return end;
+}
+
+void ARunnerCharacter::StartFire()
+{
+	FVector tempWorldLocation;
+	FVector tempWorldDirection;
+	UGameplayStatics::GetPlayerController(this, 0)->DeprojectMousePositionToWorld(tempWorldLocation, tempWorldDirection);
+	Fire(SetAim(tempWorldLocation, tempWorldDirection));
+}
+
+void ARunnerCharacter::Fire(FVector aimLoc)
+{
+	if (GetCharacterMovement()->IsCrouching())
+	{
+		return;
+	}
+	if (GetCharacterMovement()->IsFalling())
+	{
+		return;
+	}
+	if (Pitch > 80 || Yaw > 80)
+	{
+		return;
+	}
+	FVector muzzleLoc = GunMeshComponent->GetSocketLocation(MuzzleSocketName);
+	FRotator prjRot = UKismetMathLibrary::FindLookAtRotation(muzzleLoc, aimLoc);
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	GetWorld()->SpawnActor<AActor>(Projectile, muzzleLoc, prjRot, SpawnParams);
+}
+
+void ARunnerCharacter::SlideStarted()
+{
+	if (GetCharacterMovement()->IsCrouching())
+	{
+		return;
+	}
+	if (GetCharacterMovement()->IsFalling())
+	{
+		return;
+	}
+	UAnimInstance* AnimInstance = (GetMesh()) ? GetMesh()->GetAnimInstance() : nullptr;
+	if (AnimInstance == nullptr)
+	{
+		return;
+	}
+	Crouch();
+	AnimInstance->Montage_Play(SlideMontage, 1.0f);
+	AnimInstance->OnPlayMontageNotifyBegin.AddDynamic(this, &ARunnerCharacter::SlideEnded);
+}
+
+void ARunnerCharacter::SlideEnded(FName NotifyName, const FBranchingPointNotifyPayload& BranchingPointPayload)
+{
+	UnCrouch();
 }
 
 void ARunnerCharacter::TurnAtRate(float Rate)
