@@ -42,7 +42,10 @@ void AEnemy::Start()
 	CapsuleComponent->SetCollisionResponseToAllChannels(ECollisionResponse::ECR_Block);
 	CapsuleComponent->SetCollisionResponseToChannel(ECollisionChannel::ECC_Visibility, ECollisionResponse::ECR_Ignore);
 	CapsuleComponent->SetRelativeRotation(FRotator(0.0f, 0.0f, 0.0f));
-	Crouch();
+	if (Type != EEnemyTypes::Stand)
+	{
+		Crouch();
+	}
 }
 
 void AEnemy::Crouch()
@@ -76,7 +79,8 @@ void AEnemy::BeginPlay()
 	print(FString::Printf(TEXT("Default location is (%f, %f, %f)"), DefaultLocation.X, DefaultLocation.Y, DefaultLocation.Z));
 	print(FString::Printf(TEXT("Default rotation is (%f, %f, %f)"), DefaultRotation.Roll, DefaultRotation.Pitch, DefaultRotation.Yaw));
 	
-	GunMeshComponent->AttachTo(MeshComponent, WeaponSocketName, EAttachLocation::SnapToTarget, false);
+	GunMeshComponent->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetIncludingScale, WeaponSocketName);
+	//GunMeshComponent->AttachTo(MeshComponent, WeaponSocketName, EAttachLocation::SnapToTarget, false);
 	//CapsuleComponent->OnComponentHit.AddDynamic(this, &AEnemy::OnCapsuleHit);
 
 	EnemyDetectionRange->OnComponentBeginOverlap.AddDynamic(this, &AEnemy::OnEnemyDetected);
@@ -139,7 +143,10 @@ void AEnemy::OnEnemyDetected(UPrimitiveComponent* OverlappedComponent, AActor* O
 	{
 		return;
 	}
-	Uncrouch();
+	if (Type == EEnemyTypes::Cover)
+	{
+		Uncrouch();
+	}
 }
 
 void AEnemy::OnEnterFireRange(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
@@ -153,7 +160,6 @@ void AEnemy::OnEnterFireRange(UPrimitiveComponent* OverlappedComponent, AActor* 
 	{
 		return;
 	}
-	print(FString::Printf(TEXT("Fire range!")));
 	Target = OtherActor;
 }
 

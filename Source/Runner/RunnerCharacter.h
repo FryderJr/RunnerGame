@@ -41,6 +41,13 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Weapon)
 	float Yaw;
 
+	bool bIsSliding;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = Movement)
+	bool bCanTurn;
+
+	FRotator DesiredRotation;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = Weapon)
 	FName MuzzleSocketName;
 
@@ -53,6 +60,22 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = Control)
 	class UAnimMontage* SlideMontage;
 
+	UPROPERTY(EditDefaultsOnly, Category = Shield)
+	float ShieldTime = 5.0f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = Shield)
+	bool bIsShielded;
+
+	class UAnimInstance* AnimInstance;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Control)
+	TArray<FVector> LanesPositions;
+
+	UPROPERTY(EditDefaultsOnly, Category = Control)
+	int CurrentLane;
+
+	int TargetLane;
+
 protected:
 
 	/** Resets HMD orientation in VR. */
@@ -62,7 +85,9 @@ protected:
 	void MoveForward(float Value);
 
 	/** Called for side to side input */
-	void MoveRight(float Value);
+	void MoveRight();
+
+	void MoveLeft();
 
 	/** 
 	 * Called via input to turn at a given rate. 
@@ -76,8 +101,7 @@ protected:
 	 */
 	void LookUpAtRate(float Rate);
 
-	/*
-	*/
+	/** */
 	void JumpOrCrouchAxis(float Value);
 
 	/** Handler for when a touch input begins. */
@@ -86,12 +110,27 @@ protected:
 	/** Handler for when a touch input stops. */
 	void TouchStopped(ETouchIndex::Type FingerIndex, FVector Location);
 
+	UFUNCTION(BlueprintCallable, Category = Control)
+	void ChangeLanes(int ShiftLane);
+
+	UFUNCTION(BlueprintCallable, Category = Shield)
+	void ActivateShield();
+
+	UFUNCTION()
+	void DeactivateShield();
+
+	UMaterialInstanceDynamic* BodyMaterial;
+
+	FTimerHandle ShieldTimerHandle;
+
 	FVector SetAim(FVector worldLocation, FVector worldDirection);
 
 	void StartFire();
 
 	UFUNCTION(BlueprintCallable, Category = Weapon)
 	void Fire(FVector aimLoc);
+
+	void TurnCorner();
 
 	UFUNCTION(Category=Control)
 	void SlideStarted();

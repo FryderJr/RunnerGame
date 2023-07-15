@@ -31,6 +31,8 @@ ARunnerCharacter::ARunnerCharacter()
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;
+	bIsSliding = false;
+	bCanTurn = false;
 
 	// Configure character movement
 	GetCharacterMovement()->bOrientRotationToMovement = true; // Character moves in the direction of input...	
@@ -67,11 +69,13 @@ void ARunnerCharacter::SetupPlayerInputComponent(class UInputComponent* PlayerIn
 	PlayerInputComponent->BindAction("Jump", IE_Pressed, this, &ACharacter::Jump);
 	PlayerInputComponent->BindAction("Jump", IE_Released, this, &ACharacter::StopJumping);
 	PlayerInputComponent->BindAction("Fire", IE_Pressed, this, &ARunnerCharacter::StartFire);
+	PlayerInputComponent->BindAction("MoveRight", IE_Pressed, this, &ARunnerCharacter::MoveRight);
+	PlayerInputComponent->BindAction("MoveLeft", IE_Pressed, this, &ARunnerCharacter::MoveLeft);
 
 	PlayerInputComponent->BindAction("Crouch", IE_Pressed, this, &ARunnerCharacter::SlideStarted);
 
 	PlayerInputComponent->BindAxis("MoveForward", this, &ARunnerCharacter::MoveForward);
-	PlayerInputComponent->BindAxis("MoveRight", this, &ARunnerCharacter::MoveRight);
+	
 
 	PlayerInputComponent->BindAxis("JumpOrCrouch", this, &ARunnerCharacter::JumpOrCrouchAxis);
 
@@ -96,13 +100,19 @@ void ARunnerCharacter::SetupPlayerInputComponent(class UInputComponent* PlayerIn
 void ARunnerCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	TurnCorner();
 	MoveForward(1.0);
 }
 
 void ARunnerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-	GunMeshComponent->AttachTo(GetMesh(), WeaponSocketName, EAttachLocation::SnapToTarget, false);
+	GunMeshComponent->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetIncludingScale, WeaponSocketName);
+	//GunMeshComponent->AttachTo(GetMesh(), WeaponSocketName, EAttachLocation::SnapToTarget, false);
+	AnimInstance = (GetMesh()) ? GetMesh()->GetAnimInstance() : nullptr;
+	AnimInstance->OnPlayMontageNotifyBegin.AddDynamic(this, &ARunnerCharacter::SlideEnded);
+
+	BodyMaterial = GetMesh()->CreateAndSetMaterialInstanceDynamic(0);
 }
 
 
@@ -119,7 +129,8 @@ void ARunnerCharacter::OnResetVR()
 
 void ARunnerCharacter::JumpOrCrouchAxis(float Value)
 {
-	if (Value > .8f)
+	//print(FString::Printf(TEXT("Vertical axis value is %f!"), Value));
+	if (Value > .9f)
 	{
 		if (GetCharacterMovement()->IsFalling())
 		{
@@ -128,7 +139,7 @@ void ARunnerCharacter::JumpOrCrouchAxis(float Value)
 		Jump();
 		return;
 	}
-	if (Value < -.8f)
+	if (Value < -.9f)
 	{
 		SlideStarted();
 		return;
@@ -142,10 +153,85 @@ void ARunnerCharacter::TouchStarted(ETouchIndex::Type FingerIndex, FVector Locat
 
 void ARunnerCharacter::TouchStopped(ETouchIndex::Type FingerIndex, FVector Location)
 {
-	FVector tempWorldLocation;
-	FVector tempWorldDirection;
-	UGameplayStatics::GetPlayerController(this, 0)->DeprojectScreenPositionToWorld(Location.X, Location.Y, tempWorldLocation, tempWorldDirection);
-	Fire(SetAim(tempWorldLocation, tempWorldDirection));
+	FVector DiffVector = Location - TouchDownLoc;
+
+	if (DiffVector.Length() < 20.0)
+	{
+		FVector tempWorldLocation;
+		FVector tempWorldDirection;
+		UGameplayStatics::GetPlayerController(this, 0)->DeprojectScreenPositionToWorld(Location.X, Location.Y, tempWorldLocation, tempWorldDirection);
+		Fire(SetAim(tempWorldLocation, tempWorldDirection));
+		return;
+	}
+	if (FMath::Abs(DiffVector.X) > FMath::Abs(DiffVector.Y))
+	{
+		if (DiffVector.X > 0)
+		{
+			MoveRight();
+			return;
+		}
+		MoveLeft();
+	}
+	if (DiffVector.Y > 0)
+	{
+		Jump();
+		return;
+	}
+	SlideStarted();
+}
+
+void ARunnerCharacter::ChangeLanes(int ShiftLane)
+{
+	TargetLane = UKismetMathLibrary::Clamp(CurrentLane + ShiftLane, 0, LanesPositions.Num() - 1);
+
+	print(FString::Printf(TEXT("Target lane is %d"), TargetLane));
+
+	float Value = LanesPositions[TargetLane].Y - LanesPositions[CurrentLane].Y;
+
+	// find out which way is right
+	const FRotator Rotation = Controller->GetControlRotation();
+	const FRotator YawRotation(0, Rotation.Yaw, 0);
+
+	// get right vector 
+	const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+	// add movement in that direction
+	//AddMovementInput(Direction, Value);
+	FVector TargetDirection = LanesPositions[TargetLane] - GetActorLocation();
+
+	FVector NewDirection = TargetDirection * Direction;
+	//NewLocation.Y = Value;
+	SetActorLocation(GetActorLocation() + NewDirection);
+
+	//SetActorLocation(GetActorLocation() + Direction * Value);
+
+	CurrentLane = TargetLane;
+}
+
+void ARunnerCharacter::ActivateShield()
+{
+	if (bIsShielded)
+	{
+		return;
+	}
+	if (!BodyMaterial)
+	{
+		return;
+	}
+	BodyMaterial->SetScalarParameterValue(FName("Active"), 1.0f);
+	FTimerDelegate CustomDelegate;
+	CustomDelegate.BindUFunction(this, FName("DeactivateShield"), &ARunnerCharacter::DeactivateShield);
+	GetWorldTimerManager().SetTimer(ShieldTimerHandle, CustomDelegate, ShieldTime, false);
+	bIsShielded = true;
+}
+
+void ARunnerCharacter::DeactivateShield()
+{
+	bIsShielded = false;
+	if (!BodyMaterial)
+	{
+		return;
+	}
+	BodyMaterial->SetScalarParameterValue(FName("Active"), 0.0f);
 }
 
 FVector ARunnerCharacter::SetAim(FVector worldLocation, FVector worldDirection)
@@ -153,8 +239,19 @@ FVector ARunnerCharacter::SetAim(FVector worldLocation, FVector worldDirection)
 	FVector muzzleLoc = GunMeshComponent->GetSocketLocation(MuzzleSocketName);
 	FVector end = worldLocation + worldDirection * 4000;
 	FRotator weaponRotation = UKismetMathLibrary::FindLookAtRotation(muzzleLoc, end);
-	Pitch = weaponRotation.Pitch;
-	Yaw = weaponRotation.Yaw;
+	//FRotator newRotator = UKismetMathLibrary::ComposeRotators(GetControlRotation(), weaponRotation);
+	
+	FRotator newRotator = weaponRotation - GetControlRotation();
+	if (newRotator.Pitch > 270)
+	{
+		newRotator.Pitch -= 360;
+	}
+	if (newRotator.Yaw > 270)
+	{
+		newRotator.Yaw -= 360;
+	}
+	Pitch = newRotator.Pitch;
+	Yaw = newRotator.Yaw;
 	FHitResult HitResult;
 	FCollisionQueryParams CollisionQueryParams;
 	CollisionQueryParams.AddIgnoredActor(this);
@@ -184,10 +281,7 @@ void ARunnerCharacter::Fire(FVector aimLoc)
 	{
 		return;
 	}
-	if (Pitch > 80 || Yaw > 80)
-	{
-		return;
-	}
+	
 	FVector muzzleLoc = GunMeshComponent->GetSocketLocation(MuzzleSocketName);
 	FRotator prjRot = UKismetMathLibrary::FindLookAtRotation(muzzleLoc, aimLoc);
 	FActorSpawnParameters SpawnParams;
@@ -195,28 +289,40 @@ void ARunnerCharacter::Fire(FVector aimLoc)
 	GetWorld()->SpawnActor<AActor>(Projectile, muzzleLoc, prjRot, SpawnParams);
 }
 
+void ARunnerCharacter::TurnCorner()
+{
+	if (!Controller)
+	{
+		return;
+	}
+	if (!GetControlRotation().Equals(DesiredRotation))
+	{
+		Controller->SetControlRotation(UKismetMathLibrary::RInterpTo(GetControlRotation(), DesiredRotation, GetWorld()->DeltaTimeSeconds, 5));
+	}
+}
+
 void ARunnerCharacter::SlideStarted()
 {
-	if (GetCharacterMovement()->IsCrouching())
+	if (bIsSliding)
 	{
 		return;
 	}
 	if (GetCharacterMovement()->IsFalling())
 	{
 		return;
-	}
-	UAnimInstance* AnimInstance = (GetMesh()) ? GetMesh()->GetAnimInstance() : nullptr;
+	}	
 	if (AnimInstance == nullptr)
 	{
 		return;
 	}
+	bIsSliding = true;
 	Crouch();
 	AnimInstance->Montage_Play(SlideMontage, 1.0f);
-	AnimInstance->OnPlayMontageNotifyBegin.AddDynamic(this, &ARunnerCharacter::SlideEnded);
 }
 
 void ARunnerCharacter::SlideEnded(FName NotifyName, const FBranchingPointNotifyPayload& BranchingPointPayload)
 {
+	bIsSliding = false;
 	UnCrouch();
 }
 
@@ -246,10 +352,31 @@ void ARunnerCharacter::MoveForward(float Value)
 	}
 }
 
-void ARunnerCharacter::MoveRight(float Value)
+void ARunnerCharacter::MoveRight()
 {
-	if ( (Controller != nullptr) && (Value != 0.0f) )
+	if (bIsSliding)
 	{
+		return;
+	}
+	if (GetCharacterMovement()->IsFalling())
+	{
+		return;
+	}
+	if (Controller == nullptr)
+	{
+		return;
+	}
+	if (bCanTurn)
+	{
+		DesiredRotation = UKismetMathLibrary::ComposeRotators(DesiredRotation, FRotator(0, 90, 0));
+		bCanTurn = false;
+		return;
+	}
+	else
+	{
+		ChangeLanes(1);
+	}
+		/*
 		// find out which way is right
 		const FRotator Rotation = Controller->GetControlRotation();
 		const FRotator YawRotation(0, Rotation.Yaw, 0);
@@ -258,5 +385,31 @@ void ARunnerCharacter::MoveRight(float Value)
 		const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 		// add movement in that direction
 		AddMovementInput(Direction, Value);
+		*/
+}
+
+void ARunnerCharacter::MoveLeft()
+{
+	if (bIsSliding)
+	{
+		return;
+	}
+	if (GetCharacterMovement()->IsFalling())
+	{
+		return;
+	}
+	if (Controller == nullptr)
+	{
+		return;
+	}
+	if (bCanTurn)
+	{
+		DesiredRotation = UKismetMathLibrary::ComposeRotators(DesiredRotation, FRotator(0, -90, 0));
+		bCanTurn = false;
+		return;
+	}
+	else
+	{
+		ChangeLanes(-1);
 	}
 }

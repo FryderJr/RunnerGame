@@ -10,6 +10,14 @@ class USkeletalMeshComponent;
 class UCapsuleComponent;
 class UBoxComponent;
 
+UENUM(BlueprintType)
+enum EEnemyTypes
+{
+	Cover	UMETA(DisplayName = "Covering"),
+	Crouch	UMETA(DisplayName = "Crouching"),
+	Stand	UMETA(DisplayName = "Standing")
+};
+
 UCLASS()
 class RUNNER_API AEnemy : public AActor
 {
@@ -39,6 +47,9 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
 	FName WeaponSocketName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy")
+	TEnumAsByte<EEnemyTypes> Type;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
 	TSubclassOf<AActor> Projectile;
